@@ -2,7 +2,7 @@
 nixPkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["npm install --omit=dev"]
+cmds = ["echo skip"]
 
 [start]
-cmd = "npm start"
+cmd = "node dist/server.mjs"
