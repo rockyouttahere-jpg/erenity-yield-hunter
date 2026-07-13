@@ -1,136 +1,84 @@
 import express from "express";
-import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
-import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
+import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
+import { x402ResourceServer } from "@okxweb3/x402-express";
 
 const app = express();
 app.use(express.json());
 
-// ===== CONFIG =====
 const PORT = parseInt(process.env.PORT || "4021");
 const XLAYER_ADDRESS = "0x5ec145b3bad6a80d3a96e2b65b3e13fbab3be431";
-const PRICE = "$5"; // 5 USDT per scan
+const PRICE = "5000000"; // 5 USDT in smallest unit
 
-// ===== x402 SETUP =====
-// Requires OKX API credentials from https://web3.okx.com/onchain-os/dev-portal
-const OKX_API_KEY="7bdbe763-b178-4506-974c-c6d358670f2e";
-const OKX_SECRET_KEY="272D490653106A716B0B8562370D434D";
-const OKX_PASSPHRASE="Yangchaowang918$";
-
-if (!OKX_API_KEY || !OKX_SECRET_KEY || !OKX_PASSPHRASE) {
-  console.error("❌ Missing OKX API credentials. Set OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE env vars.");
-  console.error("   Get them at: https://web3.okx.com/onchain-os/dev-portal");
-  process.exit(1);
-}
+// Hardcoded OKX credentials
+const OKX_API_KEY = "7bdbe763-b178-4506-974c-c6d358670f2e";
+const OKX_SECRET_KEY = "272D490653106A716B0B8562370D434D";
+const OKX_PASSPHRASE = "Yangchaowang918$";
 
 const facilitatorClient = new OKXFacilitatorClient({
   apiKey: OKX_API_KEY,
   secretKey: OKX_SECRET_KEY,
   passphrase: OKX_PASSPHRASE,
 });
+
 const resourceServer = new x402ResourceServer(facilitatorClient).register(
-  "eip155:196", // XLayer mainnet
+  "eip155:196",
   new ExactEvmScheme()
 );
 
-app.use(
-  paymentMiddleware(
-    {
-      "POST /mcp/us-yield-hunter": {
-        accepts: {
-          scheme: "exact",
-          price: PRICE,
-          network: "eip155:196",
-          payTo: XLAYER_ADDRESS,
-        },
-        description:
-          "US stock yield & bottleneck scan — Serenity supply-chain analysis + hidden dividend picks + portfolio construction. Chinese/English.",
-        mimeType: "application/json",
-      },
+const paymentOptions = {
+  "POST /mcp/us-yield-hunter": {
+    accepts: {
+      scheme: "exact",
+      price: PRICE,
+      network: "eip155:196",
+      payTo: XLAYER_ADDRESS,
     },
-    resourceServer
-  )
-);
+    description: "US stock yield & bottleneck scan — Serenity supply-chain analysis + hidden dividend picks + portfolio construction. Chinese/English.",
+    mimeType: "application/json",
+  },
+};
 
-// ===== MCP ENDPOINT =====
 app.post("/mcp/us-yield-hunter", async (req, res) => {
   try {
-    const { focus_sectors, style, language } = req.body || {};
+    // Check payment using the resource server
+    const paymentResult = await resourceServer.verify(req, paymentOptions);
+    
+    if (!paymentResult.isValid) {
+      // Return 402 with UPPERCASE header (OKX validator requires this)
+      const challenge = await resourceServer.createChallenge(req, paymentOptions);
+      
+      res.setHeader("PAYMENT-REQUIRED", challenge);  // ← 大写！
+      return res.status(402).json({});
+    }
 
-    // Build the analysis prompt
-    const prompt = buildPrompt({ focus_sectors, style, language });
+    // Payment valid → run analysis
+    const { focus_sectors, style, language = "zh" } = req.body || {};
+    
+    const report = `Serenity 美股瓶颈与收益研报（占位）
 
-    // Run the analysis via Hermes backend
-    const report = await runAnalysis(prompt);
+用户请求: ${JSON.stringify({ focus_sectors, style, language })}
 
-    res.json({
-      success: true,
-      agent: "US Yield & Bottleneck Hunter",
-      agentId: "5149",
-      timestamp: new Date().toISOString(),
-      report,
-      credits: {
-        clawby_api_calls: "3-5",
-        web_searches: "4-6",
-        model: "deepseek-v4-pro",
-      },
-    });
-  } catch (error: any) {
-    console.error("Analysis error:", error);
-    res.status(500).json({
-      success: false,
-      error: error.message || "Analysis failed",
-    });
+（正式版本会调用 Hermes 后端生成完整 3000+ 字报告）
+
+当前为 Railway 验证通过版本。`;
+
+    res.json({ report });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal error" });
   }
 });
 
-// ===== HEALTH CHECK =====
-app.get("/health", (_req, res) => {
+app.get("/health", (req, res) => {
   res.json({ status: "ok", agent: "US Yield & Bottleneck Hunter", agentId: "5149" });
 });
 
-// ===== START =====
 app.listen(PORT, () => {
   console.log(`🔬 US Yield & Bottleneck Hunter - x402 MCP Server`);
   console.log(`   Port: ${PORT}`);
   console.log(`   Endpoint: POST /mcp/us-yield-hunter`);
-  console.log(`   Price: ${PRICE} USDT on XLayer`);
+  console.log(`   Price: $5 USDT on XLayer`);
   console.log(`   Pay to: ${XLAYER_ADDRESS}`);
 });
-
-// ===== ANALYSIS LOGIC =====
-function buildPrompt(params: {
-  focus_sectors?: string;
-  style?: string;
-  language?: string;
-}): string {
-  const sectors = params.focus_sectors || "all";
-  const style = params.style || "balanced";
-  const lang = params.language || "zh";
-
-  return `Run a full US market scan using the us-yield-bottleneck-hunter skill.
-
-Parameters:
-- focus_sectors: ${sectors}
-- style: ${style}
-- language: ${lang}
-
-Follow the skill workflow exactly:
-1. Fetch market snapshot + sector rotation data via Clawby Data
-2. Run Serenity deep supply-chain bottleneck analysis (2 directions minimum, 800+ words each, with evidence chains)
-3. Screen hidden yield picks across categories (Treasuries, Covered Call ETFs, BDCs, MLPs, CLOs, CEFs, REITs)
-4. Build portfolios tiered by risk
-5. Output summary + watchlist
-
-Use real data from Clawby API and web_search. Every claim must cite a source. Output in ${lang === "zh" ? "Chinese" : "English"}.`;
-}
-
-async function runAnalysis(prompt: string): Promise<string> {
-  // In production, this would call the Hermes Agent API or a sub-agent
-  // For now, return a sample report structure
-  return `This is a placeholder. In production, the Hermes agent processes this request:
-${prompt.substring(0, 200)}...
-
-Full analysis with Serenity methodology, Clawby Data, and real-time market data
-will be generated by the Hermes LLM backend.`;
-}

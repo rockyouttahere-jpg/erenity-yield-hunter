@@ -24071,6 +24071,169 @@ var OKXFacilitatorClient = class {
 };
 var x402Version = 2;
 
+// node_modules/@okxweb3/x402-evm/dist/esm/chunk-A7UQ7D5C.mjs
+var DEFAULT_STABLECOINS = {
+  "eip155:196": {
+    address: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+    name: "USD\u20AE0",
+    version: "1",
+    decimals: 6
+  },
+  // X Layer mainnet USDT0 (EIP-3009)
+  "eip155:1952": {
+    address: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c",
+    name: "USD\u20AE0",
+    version: "1",
+    decimals: 6
+  }
+};
+function getDefaultAsset(network) {
+  const info = DEFAULT_STABLECOINS[network];
+  if (!info) {
+    throw new Error(`No default asset configured for network ${network}`);
+  }
+  return info;
+}
+
+// node_modules/@okxweb3/x402-evm/dist/esm/exact/server/index.mjs
+var ExactEvmScheme = class {
+  constructor() {
+    this.scheme = "exact";
+    this.moneyParsers = [];
+  }
+  /**
+   * Register a custom money parser in the parser chain.
+   * Multiple parsers can be registered - they will be tried in registration order.
+   * Each parser receives a decimal amount (e.g., 1.50 for $1.50).
+   * If a parser returns null, the next parser in the chain will be tried.
+   * The default parser is always the final fallback.
+   *
+   * @param parser - Custom function to convert amount to AssetAmount (or null to skip)
+   * @returns The server instance for chaining
+   *
+   * @example
+   * evmServer.registerMoneyParser(async (amount, network) => {
+   *   // Custom conversion logic
+   *   if (amount > 100) {
+   *     // Use different token for large amounts
+   *     return { amount: (amount * 1e18).toString(), asset: "0xCustomToken" };
+   *   }
+   *   return null; // Use next parser
+   * });
+   */
+  registerMoneyParser(parser) {
+    this.moneyParsers.push(parser);
+    return this;
+  }
+  /**
+   * Parses a price into an asset amount.
+   * If price is already an AssetAmount, returns it directly.
+   * If price is Money (string | number), parses to decimal and tries custom parsers.
+   * Falls back to default conversion if all custom parsers return null.
+   *
+   * @param price - The price to parse
+   * @param network - The network to use
+   * @returns Promise that resolves to the parsed asset amount
+   */
+  async parsePrice(price, network) {
+    if (typeof price === "object" && price !== null && "amount" in price) {
+      if (!price.asset) {
+        throw new Error(`Asset address must be specified for AssetAmount on network ${network}`);
+      }
+      return {
+        amount: price.amount,
+        asset: price.asset,
+        extra: price.extra || {}
+      };
+    }
+    const amount = this.parseMoneyToDecimal(price);
+    for (const parser of this.moneyParsers) {
+      const result = await parser(amount, network);
+      if (result !== null) {
+        return result;
+      }
+    }
+    return this.defaultMoneyConversion(amount, network);
+  }
+  /**
+   * Build payment requirements for this scheme/network combination
+   *
+   * @param paymentRequirements - The base payment requirements
+   * @param supportedKind - The supported kind from facilitator (unused)
+   * @param supportedKind.x402Version - The x402 version
+   * @param supportedKind.scheme - The logical payment scheme
+   * @param supportedKind.network - The network identifier in CAIP-2 format
+   * @param supportedKind.extra - Optional extra metadata regarding scheme/network implementation details
+   * @param extensionKeys - Extension keys supported by the facilitator (unused)
+   * @returns Payment requirements ready to be sent to clients
+   */
+  enhancePaymentRequirements(paymentRequirements, supportedKind, extensionKeys) {
+    void supportedKind;
+    void extensionKeys;
+    return Promise.resolve(paymentRequirements);
+  }
+  /**
+   * Parse Money (string | number) to a decimal number.
+   * Handles formats like "$1.50", "1.50", 1.50, etc.
+   *
+   * @param money - The money value to parse
+   * @returns Decimal number
+   */
+  parseMoneyToDecimal(money) {
+    if (typeof money === "number") {
+      return money;
+    }
+    const cleanMoney = money.replace(/^\$/, "").trim();
+    const amount = parseFloat(cleanMoney);
+    if (isNaN(amount)) {
+      throw new Error(`Invalid money format: ${money}`);
+    }
+    return amount;
+  }
+  /**
+   * Converts a numeric dollar amount to an AssetAmount using the default token for the network.
+   *
+   * @param amount - The dollar amount as a number
+   * @param network - The target network
+   * @returns The converted asset amount with token metadata
+   */
+  defaultMoneyConversion(amount, network) {
+    const assetInfo = getDefaultAsset(network);
+    const tokenAmount = this.convertToTokenAmount(amount.toString(), assetInfo.decimals);
+    const includeEip712Domain = !assetInfo.assetTransferMethod || assetInfo.supportsEip2612;
+    return {
+      amount: tokenAmount,
+      asset: assetInfo.address,
+      extra: {
+        ...includeEip712Domain && {
+          name: assetInfo.name,
+          version: assetInfo.version
+        },
+        ...assetInfo.assetTransferMethod && {
+          assetTransferMethod: assetInfo.assetTransferMethod
+        }
+      }
+    };
+  }
+  /**
+   * Converts a decimal string amount to an integer token amount using the given decimals.
+   *
+   * @param decimalAmount - The amount as a decimal string (e.g. "1.5")
+   * @param decimals - The number of decimal places for the token
+   * @returns The token amount as an integer string in smallest units
+   */
+  convertToTokenAmount(decimalAmount, decimals) {
+    const amount = parseFloat(decimalAmount);
+    if (isNaN(amount)) {
+      throw new Error(`Invalid amount: ${decimalAmount}`);
+    }
+    const [intPart, decPart = ""] = String(amount).split(".");
+    const paddedDec = decPart.padEnd(decimals, "0").slice(0, decimals);
+    const tokenAmount = (intPart + paddedDec).replace(/^0+/, "") || "0";
+    return tokenAmount;
+  }
+};
+
 // node_modules/@okxweb3/x402-core/dist/esm/chunk-CAXWAW23.mjs
 var VerifyError = class extends Error {
   /**
@@ -24121,16 +24284,6 @@ var FacilitatorResponseError = class extends Error {
     this.name = "FacilitatorResponseError";
   }
 };
-function getFacilitatorResponseError(error) {
-  let current = error;
-  while (current instanceof Error) {
-    if (current instanceof FacilitatorResponseError) {
-      return current;
-    }
-    current = current.cause;
-  }
-  return null;
-}
 
 // node_modules/@okxweb3/x402-core/dist/esm/chunk-TDLQZ6MP.mjs
 var findSchemesByNetwork = (map, network) => {
@@ -24150,27 +24303,6 @@ var findSchemesByNetwork = (map, network) => {
 var findByNetworkAndScheme = (map, scheme, network) => {
   return findSchemesByNetwork(map, network)?.get(scheme);
 };
-var Base64EncodedRegex = /^[A-Za-z0-9+/]*={0,2}$/;
-function safeBase64Encode(data) {
-  if (typeof globalThis !== "undefined" && typeof globalThis.btoa === "function") {
-    const bytes = new TextEncoder().encode(data);
-    const binaryString = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
-    return globalThis.btoa(binaryString);
-  }
-  return Buffer.from(data, "utf8").toString("base64");
-}
-function safeBase64Decode(data) {
-  if (typeof globalThis !== "undefined" && typeof globalThis.atob === "function") {
-    const binaryString = globalThis.atob(data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const decoder = new TextDecoder("utf-8");
-    return decoder.decode(bytes);
-  }
-  return Buffer.from(data, "base64").toString("utf-8");
-}
 function deepEqual(obj1, obj2) {
   const normalize = (obj) => {
     if (obj === null || obj === void 0) return JSON.stringify(obj);
@@ -28273,14 +28405,6 @@ var PaymentPayloadSchema = external_exports.object({
   extensions: OptionalAny
 });
 
-// node_modules/@okxweb3/x402-core/dist/esm/chunk-BJTO5JO5.mjs
-var __require2 = /* @__PURE__ */ ((x) => typeof __require !== "undefined" ? __require : typeof Proxy !== "undefined" ? new Proxy(x, {
-  get: (a, b) => (typeof __require !== "undefined" ? __require : a)[b]
-}) : x)(function(x) {
-  if (typeof __require !== "undefined") return __require.apply(this, arguments);
-  throw Error('Dynamic require of "' + x + '" is not supported');
-});
-
 // node_modules/@okxweb3/x402-core/dist/esm/chunk-NYKB44OI.mjs
 var DEFAULT_FACILITATOR_URL = "https://web3.okx.com/facilitator";
 var GET_SUPPORTED_RETRIES = 3;
@@ -28864,9 +28988,9 @@ var x402ResourceServer = class {
    * @param context - HTTP request context for resolving dynamic functions
    * @returns Array of payment requirements (one per option)
    */
-  async buildPaymentRequirementsFromOptions(paymentOptions, context) {
+  async buildPaymentRequirementsFromOptions(paymentOptions2, context) {
     const allRequirements = [];
-    for (const option of paymentOptions) {
+    for (const option of paymentOptions2) {
       const resolvedPayTo = typeof option.payTo === "function" ? await option.payTo(context) : option.payTo;
       const resolvedPrice = typeof option.price === "function" ? await option.price(context) : option.price;
       const resourceConfig = {
@@ -29251,1171 +29375,16 @@ var x402ResourceServer = class {
     return findByNetworkAndScheme(versionMap, scheme, network);
   }
 };
-function decodePaymentSignatureHeader(paymentSignatureHeader) {
-  if (!Base64EncodedRegex.test(paymentSignatureHeader)) {
-    throw new Error("Invalid payment signature header");
-  }
-  return JSON.parse(safeBase64Decode(paymentSignatureHeader));
-}
-function encodePaymentRequiredHeader(paymentRequired) {
-  return safeBase64Encode(JSON.stringify(paymentRequired));
-}
-function encodePaymentResponseHeader(paymentResponse) {
-  return safeBase64Encode(JSON.stringify(paymentResponse));
-}
-var SETTLEMENT_OVERRIDES_HEADER = "settlement-overrides";
-var RouteConfigurationError = class extends Error {
-  /**
-   * Creates a new RouteConfigurationError with the given validation errors.
-   *
-   * @param errors - The validation errors that caused this exception.
-   */
-  constructor(errors) {
-    const message = `x402 Route Configuration Errors:
-${errors.map((e) => `  - ${e.message}`).join("\n")}`;
-    super(message);
-    this.name = "RouteConfigurationError";
-    this.errors = errors;
-  }
-};
-var x402HTTPResourceServer = class {
-  /**
-   * Creates a new x402HTTPResourceServer instance.
-   *
-   * @param ResourceServer - The core x402ResourceServer instance to use
-   * @param routes - Route configuration for payment-protected endpoints
-   */
-  constructor(ResourceServer, routes) {
-    this.compiledRoutes = [];
-    this.protectedRequestHooks = [];
-    this.pollDeadlineMs = DEFAULT_POLL_DEADLINE_MS;
-    this.ResourceServer = ResourceServer;
-    this.routesConfig = routes;
-    const normalizedRoutes = typeof routes === "object" && !("accepts" in routes) ? routes : { "*": routes };
-    for (const [pattern, config] of Object.entries(normalizedRoutes)) {
-      const parsed = this.parseRoutePattern(pattern);
-      this.compiledRoutes.push({
-        verb: parsed.verb,
-        regex: parsed.regex,
-        config,
-        pattern: parsed.path
-      });
-    }
-  }
-  /**
-   * Get the underlying x402ResourceServer instance.
-   *
-   * @returns The underlying x402ResourceServer instance
-   */
-  get server() {
-    return this.ResourceServer;
-  }
-  /**
-   * Get the routes configuration.
-   *
-   * @returns The routes configuration
-   */
-  get routes() {
-    return this.routesConfig;
-  }
-  /**
-   * Initialize the HTTP resource server.
-   *
-   * This method initializes the underlying resource server (fetching facilitator support)
-   * and then validates that all route payment configurations have corresponding
-   * registered schemes and facilitator support.
-   *
-   * @throws RouteConfigurationError if any route's payment options don't have
-   *         corresponding registered schemes or facilitator support
-   *
-   * @example
-   * ```typescript
-   * const httpServer = new x402HTTPResourceServer(server, routes);
-   * await httpServer.initialize();
-   * ```
-   */
-  async initialize() {
-    await this.ResourceServer.initialize();
-    const errors = this.validateRouteConfiguration();
-    if (errors.length > 0) {
-      throw new RouteConfigurationError(errors);
-    }
-  }
-  /**
-   * Register a custom paywall provider for generating HTML
-   *
-   * @param provider - PaywallProvider instance
-   * @returns This service instance for chaining
-   */
-  registerPaywallProvider(provider) {
-    this.paywallProvider = provider;
-    return this;
-  }
-  /**
-   * Register a hook that runs on every request to a protected route, before payment processing.
-   * Hooks are executed in order of registration. The first hook to return a non-void result wins.
-   *
-   * @param hook - The request hook function
-   * @returns The x402HTTPResourceServer instance for chaining
-   */
-  onProtectedRequest(hook) {
-    this.protectedRequestHooks.push(hook);
-    return this;
-  }
-  /**
-   * Register a hook to call when the facilitator returns status="timeout".
-   * The hook should verify the tx on-chain and return { confirmed: boolean }.
-   * If confirmed=true the resource is delivered (200); otherwise 402 is returned.
-   *
-   * @param hook - On-chain verification callback
-   * @returns The x402HTTPResourceServer instance for chaining
-   */
-  onSettlementTimeout(hook) {
-    this.timeoutRecoveryHook = hook;
-    return this;
-  }
-  /**
-   * Set the poll deadline for settle/status polling on timeout recovery.
-   * Default is 5000ms.
-   *
-   * @param deadlineMs - Maximum time to poll in milliseconds
-   * @returns The x402HTTPResourceServer instance for chaining
-   */
-  setPollDeadline(deadlineMs) {
-    this.pollDeadlineMs = deadlineMs;
-    return this;
-  }
-  /**
-   * Process HTTP request and return response instructions
-   * This is the main entry point for framework middleware
-   *
-   * @param context - HTTP request context
-   * @param paywallConfig - Optional paywall configuration
-   * @returns Process result indicating next action for middleware
-   */
-  async processHTTPRequest(context, paywallConfig) {
-    const { adapter, path, method } = context;
-    const routeMatch = this.getRouteConfig(path, method);
-    if (!routeMatch) {
-      return { type: "no-payment-required" };
-    }
-    const { config: routeConfig, pattern: routePattern } = routeMatch;
-    const enrichedContext = { ...context, routePattern };
-    for (const hook of this.protectedRequestHooks) {
-      const result = await hook(enrichedContext, routeConfig);
-      if (result && "grantAccess" in result) {
-        return { type: "no-payment-required" };
-      }
-      if (result && "abort" in result) {
-        return {
-          type: "payment-error",
-          response: {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-            body: { error: result.reason }
-          }
-        };
-      }
-    }
-    const paymentOptions = this.normalizePaymentOptions(routeConfig);
-    const paymentPayload = this.extractPayment(adapter);
-    const resourceInfo = {
-      url: routeConfig.resource || enrichedContext.adapter.getUrl(),
-      description: routeConfig.description || "",
-      mimeType: routeConfig.mimeType || ""
-    };
-    let requirements = await this.ResourceServer.buildPaymentRequirementsFromOptions(
-      paymentOptions,
-      enrichedContext
-    );
-    let extensions = routeConfig.extensions;
-    if (extensions) {
-      extensions = this.ResourceServer.enrichExtensions(extensions, enrichedContext);
-    }
-    const transportContext = { request: enrichedContext };
-    const paymentRequired = await this.ResourceServer.createPaymentRequiredResponse(
-      requirements,
-      resourceInfo,
-      !paymentPayload ? "Payment required" : void 0,
-      extensions,
-      transportContext
-    );
-    if (!paymentPayload) {
-      const unpaidBody = routeConfig.unpaidResponseBody ? await routeConfig.unpaidResponseBody(enrichedContext) : void 0;
-      return {
-        type: "payment-error",
-        response: this.createHTTPResponse(
-          paymentRequired,
-          this.isWebBrowser(adapter),
-          paywallConfig,
-          routeConfig.customPaywallHtml,
-          unpaidBody
-        )
-      };
-    }
-    try {
-      const matchingRequirements = this.ResourceServer.findMatchingRequirements(
-        paymentRequired.accepts,
-        paymentPayload
-      );
-      if (!matchingRequirements) {
-        const errorResponse = await this.ResourceServer.createPaymentRequiredResponse(
-          requirements,
-          resourceInfo,
-          "No matching payment requirements",
-          routeConfig.extensions,
-          transportContext
-        );
-        return {
-          type: "payment-error",
-          response: this.createHTTPResponse(errorResponse, false, paywallConfig)
-        };
-      }
-      const verifyResult = await this.ResourceServer.verifyPayment(
-        paymentPayload,
-        matchingRequirements
-      );
-      if (!verifyResult.isValid) {
-        const errorResponse = await this.ResourceServer.createPaymentRequiredResponse(
-          requirements,
-          resourceInfo,
-          verifyResult.invalidReason,
-          routeConfig.extensions,
-          transportContext
-        );
-        return {
-          type: "payment-error",
-          response: this.createHTTPResponse(errorResponse, false, paywallConfig)
-        };
-      }
-      return {
-        type: "payment-verified",
-        paymentPayload,
-        paymentRequirements: matchingRequirements,
-        declaredExtensions: routeConfig.extensions
-      };
-    } catch (error) {
-      if (error instanceof FacilitatorResponseError) {
-        throw error;
-      }
-      const errorResponse = await this.ResourceServer.createPaymentRequiredResponse(
-        requirements,
-        resourceInfo,
-        error instanceof Error ? error.message : "Payment verification failed",
-        routeConfig.extensions,
-        transportContext
-      );
-      return {
-        type: "payment-error",
-        response: this.createHTTPResponse(errorResponse, false, paywallConfig)
-      };
-    }
-  }
-  /**
-   * Process settlement after successful response
-   *
-   * @param paymentPayload - The verified payment payload
-   * @param requirements - The matching payment requirements
-   * @param declaredExtensions - Optional declared extensions (for per-key enrichment)
-   * @param transportContext - Optional HTTP transport context
-   * @param settlementOverrides - Optional settlement overrides (e.g., partial settlement amount)
-   * @returns ProcessSettleResultResponse - SettleResponse with headers if success or errorReason if failure
-   */
-  async processSettlement(paymentPayload, requirements, declaredExtensions, transportContext, settlementOverrides) {
-    try {
-      let resolvedOverrides = settlementOverrides;
-      if (!resolvedOverrides && transportContext?.responseHeaders?.[SETTLEMENT_OVERRIDES_HEADER]) {
-        try {
-          resolvedOverrides = JSON.parse(
-            transportContext.responseHeaders[SETTLEMENT_OVERRIDES_HEADER]
-          );
-        } catch {
-        }
-      }
-      const settleResponse = await this.ResourceServer.settlePayment(
-        paymentPayload,
-        requirements,
-        declaredExtensions,
-        transportContext,
-        resolvedOverrides
-      );
-      if (settleResponse.status === "timeout") {
-        if (settleResponse.transaction) {
-          const pollResult = await this.ResourceServer.pollSettleStatus(
-            settleResponse.transaction,
-            paymentPayload,
-            requirements,
-            this.pollDeadlineMs
-          );
-          if (pollResult === "success") {
-            const recovered = { ...settleResponse, status: "success" };
-            return {
-              ...recovered,
-              success: true,
-              headers: this.createSettlementHeaders(recovered),
-              requirements
-            };
-          }
-          if (this.timeoutRecoveryHook) {
-            try {
-              const { confirmed } = await this.timeoutRecoveryHook(
-                settleResponse.transaction,
-                settleResponse.network
-              );
-              if (confirmed) {
-                const recovered = { ...settleResponse, status: "success" };
-                return {
-                  ...recovered,
-                  success: true,
-                  headers: this.createSettlementHeaders(recovered),
-                  requirements
-                };
-              }
-            } catch (err) {
-              console.warn("[x402] onSettlementTimeout hook error:", err);
-            }
-          }
-        }
-        const failure = {
-          ...settleResponse,
-          success: false,
-          errorReason: "settlement_timeout",
-          errorMessage: "Settlement timed out waiting for on-chain confirmation",
-          headers: this.createSettlementHeaders(settleResponse)
-        };
-        const response = await this.buildSettlementFailureResponse(failure, transportContext);
-        return { ...failure, response };
-      }
-      if (settleResponse.status === "success" || settleResponse.status === "pending") {
-        return {
-          ...settleResponse,
-          success: true,
-          headers: this.createSettlementHeaders(settleResponse),
-          requirements
-        };
-      }
-      if (!settleResponse.success) {
-        const failure = {
-          ...settleResponse,
-          success: false,
-          errorReason: settleResponse.errorReason || "Settlement failed",
-          errorMessage: settleResponse.errorMessage || settleResponse.errorReason || "Settlement failed",
-          headers: this.createSettlementHeaders(settleResponse)
-        };
-        const response = await this.buildSettlementFailureResponse(failure, transportContext);
-        return { ...failure, response };
-      }
-      return {
-        ...settleResponse,
-        success: true,
-        headers: this.createSettlementHeaders(settleResponse),
-        requirements
-      };
-    } catch (error) {
-      if (error instanceof FacilitatorResponseError) {
-        throw error;
-      }
-      if (error instanceof SettleError) {
-        const errorReason2 = error.errorReason || error.message;
-        const settleResponse2 = {
-          success: false,
-          errorReason: errorReason2,
-          errorMessage: error.errorMessage || errorReason2,
-          payer: error.payer,
-          network: error.network,
-          transaction: error.transaction
-        };
-        const failure2 = {
-          ...settleResponse2,
-          success: false,
-          errorReason: errorReason2,
-          headers: this.createSettlementHeaders(settleResponse2)
-        };
-        const response2 = await this.buildSettlementFailureResponse(failure2, transportContext);
-        return { ...failure2, response: response2 };
-      }
-      const errorReason = error instanceof Error ? error.message : "Settlement failed";
-      const settleResponse = {
-        success: false,
-        errorReason,
-        errorMessage: errorReason,
-        network: requirements.network,
-        transaction: ""
-      };
-      const failure = {
-        ...settleResponse,
-        success: false,
-        errorReason,
-        headers: this.createSettlementHeaders(settleResponse)
-      };
-      const response = await this.buildSettlementFailureResponse(failure, transportContext);
-      return { ...failure, response };
-    }
-  }
-  /**
-   * Check if a request requires payment based on route configuration
-   *
-   * @param context - HTTP request context
-   * @returns True if the route requires payment, false otherwise
-   */
-  requiresPayment(context) {
-    return this.getRouteConfig(context.path, context.method) !== void 0;
-  }
-  /**
-   * Build HTTPResponseInstructions for settlement failure.
-   * Uses settlementFailedResponseBody hook if configured, otherwise defaults to empty body.
-   *
-   * @param failure - Settlement failure result with headers
-   * @param transportContext - Optional HTTP transport context for the request
-   * @returns HTTP response instructions for the 402 settlement failure response
-   */
-  async buildSettlementFailureResponse(failure, transportContext) {
-    const settlementHeaders = failure.headers;
-    const routeConfig = transportContext ? this.getRouteConfig(transportContext.request.path, transportContext.request.method) : void 0;
-    const customBody = routeConfig?.config.settlementFailedResponseBody ? await routeConfig.config.settlementFailedResponseBody(transportContext.request, failure) : void 0;
-    const contentType = customBody ? customBody.contentType : "application/json";
-    const body = customBody ? customBody.body : {};
-    return {
-      status: 402,
-      headers: {
-        "Content-Type": contentType,
-        ...settlementHeaders
-      },
-      body,
-      isHtml: contentType.includes("text/html")
-    };
-  }
-  /**
-   * Normalizes a RouteConfig's accepts field into an array of PaymentOptions
-   * Handles both single PaymentOption and array formats
-   *
-   * @param routeConfig - Route configuration
-   * @returns Array of payment options
-   */
-  normalizePaymentOptions(routeConfig) {
-    return Array.isArray(routeConfig.accepts) ? routeConfig.accepts : [routeConfig.accepts];
-  }
-  /**
-   * Validates that all payment options in routes have corresponding registered schemes
-   * and facilitator support.
-   *
-   * @returns Array of validation errors (empty if all routes are valid)
-   */
-  validateRouteConfiguration() {
-    const errors = [];
-    const normalizedRoutes = typeof this.routesConfig === "object" && !("accepts" in this.routesConfig) ? Object.entries(this.routesConfig) : [["*", this.routesConfig]];
-    for (const [pattern, config] of normalizedRoutes) {
-      const pathPart = pattern.includes(" ") ? pattern.split(/\s+/)[1] : pattern;
-      if (pathPart && pathPart.includes("*") && config.extensions && "bazaar" in config.extensions) {
-        console.warn(
-          `[x402] Route "${pattern}": Wildcard (*) patterns with bazaar discovery extensions will auto-generate parameter names (var1, var2, ...). Consider using named parameters instead (e.g. /weather/:city) for better discovery metadata.`
-        );
-      }
-      const paymentOptions = this.normalizePaymentOptions(config);
-      for (const option of paymentOptions) {
-        if (!this.ResourceServer.hasRegisteredScheme(option.network, option.scheme)) {
-          errors.push({
-            routePattern: pattern,
-            scheme: option.scheme,
-            network: option.network,
-            reason: "missing_scheme",
-            message: `Route "${pattern}": No scheme implementation registered for "${option.scheme}" on network "${option.network}"`
-          });
-          continue;
-        }
-        const supportedKind = this.ResourceServer.getSupportedKind(
-          x402Version,
-          option.network,
-          option.scheme
-        );
-        if (!supportedKind) {
-          errors.push({
-            routePattern: pattern,
-            scheme: option.scheme,
-            network: option.network,
-            reason: "missing_facilitator",
-            message: `Route "${pattern}": Facilitator does not support scheme "${option.scheme}" on network "${option.network}"`
-          });
-        }
-      }
-    }
-    return errors;
-  }
-  /**
-   * Get route configuration for a request
-   *
-   * @param path - Request path
-   * @param method - HTTP method
-   * @returns Route configuration and pattern, or undefined if no match
-   */
-  getRouteConfig(path, method) {
-    const normalizedPath = this.normalizePath(path);
-    const upperMethod = method.toUpperCase();
-    const matchingRoute = this.compiledRoutes.find(
-      (route) => route.regex.test(normalizedPath) && (route.verb === "*" || route.verb === upperMethod)
-    );
-    if (!matchingRoute) return void 0;
-    return { config: matchingRoute.config, pattern: matchingRoute.pattern };
-  }
-  /**
-   * Extract payment from HTTP headers (handles v1 and v2)
-   *
-   * @param adapter - HTTP adapter
-   * @returns Decoded payment payload or null
-   */
-  extractPayment(adapter) {
-    const header = adapter.getHeader("payment-signature") || adapter.getHeader("PAYMENT-SIGNATURE");
-    if (header) {
-      try {
-        return decodePaymentSignatureHeader(header);
-      } catch (error) {
-        console.warn("Failed to decode PAYMENT-SIGNATURE header:", error);
-      }
-    }
-    return null;
-  }
-  /**
-   * Check if request is from a web browser
-   *
-   * @param adapter - HTTP adapter
-   * @returns True if request appears to be from a browser
-   */
-  isWebBrowser(adapter) {
-    const accept = adapter.getAcceptHeader();
-    const userAgent = adapter.getUserAgent();
-    return accept.includes("text/html") && userAgent.includes("Mozilla");
-  }
-  /**
-   * Create HTTP response instructions from payment required
-   *
-   * @param paymentRequired - Payment requirements
-   * @param isWebBrowser - Whether request is from browser
-   * @param paywallConfig - Paywall configuration
-   * @param customHtml - Custom HTML template
-   * @param unpaidResponse - Optional custom response (content type and body) for unpaid API requests
-   * @returns Response instructions
-   */
-  createHTTPResponse(paymentRequired, isWebBrowser, paywallConfig, customHtml, unpaidResponse) {
-    const status = paymentRequired.error === "permit2_allowance_required" ? 412 : 402;
-    if (isWebBrowser) {
-      const html = this.generatePaywallHTML(paymentRequired, paywallConfig, customHtml);
-      return {
-        status,
-        headers: { "Content-Type": "text/html" },
-        body: html,
-        isHtml: true
-      };
-    }
-    const response = this.createHTTPPaymentRequiredResponse(paymentRequired);
-    const contentType = unpaidResponse ? unpaidResponse.contentType : "application/json";
-    const body = unpaidResponse ? unpaidResponse.body : {};
-    return {
-      status,
-      headers: {
-        "Content-Type": contentType,
-        ...response.headers
-      },
-      body
-    };
-  }
-  /**
-   * Create HTTP payment required response (v1 puts in body, v2 puts in header)
-   *
-   * @param paymentRequired - Payment required object
-   * @returns Headers and body for the HTTP response
-   */
-  createHTTPPaymentRequiredResponse(paymentRequired) {
-    return {
-      headers: {
-        "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired)
-      }
-    };
-  }
-  /**
-   * Create settlement response headers
-   *
-   * @param settleResponse - Settlement response
-   * @returns Headers to add to response
-   */
-  createSettlementHeaders(settleResponse) {
-    const encoded = encodePaymentResponseHeader(settleResponse);
-    return { "PAYMENT-RESPONSE": encoded };
-  }
-  /**
-   * Parse route pattern into verb and regex
-   *
-   * @param pattern - Route pattern like "GET /api/*", "/api/[id]", or "/api/:id"
-   * @returns Parsed pattern with verb and regex
-   */
-  parseRoutePattern(pattern) {
-    const [verb, path] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
-    const regex = new RegExp(
-      `^${path.replace(/[$()+.?^{|}]/g, "\\$&").replace(/\*/g, ".*?").replace(/\[([^\]]+)\]/g, "[^/]+").replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, "[^/]+").replace(/\//g, "\\/")}$`,
-      "i"
-    );
-    return { verb: verb.toUpperCase(), regex, path };
-  }
-  /**
-   * Normalize path for matching
-   *
-   * @param path - Raw path from request
-   * @returns Normalized path
-   */
-  normalizePath(path) {
-    const pathWithoutQuery = path.split(/[?#]/)[0];
-    let decodedOrRawPath;
-    try {
-      decodedOrRawPath = decodeURIComponent(pathWithoutQuery);
-    } catch {
-      decodedOrRawPath = pathWithoutQuery;
-    }
-    return decodedOrRawPath.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/(.+?)\/+$/, "$1");
-  }
-  /**
-   * Generate paywall HTML for browser requests
-   *
-   * @param paymentRequired - Payment required response
-   * @param paywallConfig - Optional paywall configuration
-   * @param customHtml - Optional custom HTML template
-   * @returns HTML string
-   */
-  generatePaywallHTML(paymentRequired, paywallConfig, customHtml) {
-    if (customHtml) {
-      return customHtml;
-    }
-    if (this.paywallProvider) {
-      return this.paywallProvider.generateHtml(paymentRequired, paywallConfig);
-    }
-    try {
-      const paywall = __require2("@okxweb3/x402-paywall");
-      const displayAmount2 = this.getDisplayAmount(paymentRequired);
-      const resource2 = paymentRequired.resource;
-      return paywall.getPaywallHtml({
-        amount: displayAmount2,
-        paymentRequired,
-        currentUrl: resource2?.url || paywallConfig?.currentUrl || "",
-        testnet: paywallConfig?.testnet ?? true,
-        appName: paywallConfig?.appName,
-        appLogo: paywallConfig?.appLogo,
-        sessionTokenEndpoint: paywallConfig?.sessionTokenEndpoint
-      });
-    } catch {
-    }
-    const resource = paymentRequired.resource;
-    const displayAmount = this.getDisplayAmount(paymentRequired);
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Payment Required</title>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        </head>
-        <body>
-          <div style="max-width: 600px; margin: 50px auto; padding: 20px; font-family: system-ui, -apple-system, sans-serif;">
-            ${paywallConfig?.appLogo ? `<img src="${paywallConfig.appLogo}" alt="${paywallConfig.appName || "App"}" style="max-width: 200px; margin-bottom: 20px;">` : ""}
-            <h1>Payment Required</h1>
-            ${resource ? `<p><strong>Resource:</strong> ${resource.description || resource.url}</p>` : ""}
-            <p><strong>Amount:</strong> $${displayAmount.toFixed(2)} USDC</p>
-            <div id="payment-widget" 
-                 data-requirements='${JSON.stringify(paymentRequired)}'
-                 data-app-name="${paywallConfig?.appName || ""}"
-                 data-testnet="${paywallConfig?.testnet || false}">
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-  }
-  /**
-   * Extract display amount from payment requirements.
-   *
-   * @param paymentRequired - The payment required object
-   * @returns The display amount in decimal format
-   */
-  getDisplayAmount(paymentRequired) {
-    const accepts = paymentRequired.accepts;
-    if (accepts && accepts.length > 0) {
-      const firstReq = accepts[0];
-      if ("amount" in firstReq) {
-        return parseFloat(firstReq.amount) / 1e6;
-      }
-    }
-    return 0;
-  }
-};
-
-// node_modules/@okxweb3/x402-express/dist/esm/index.mjs
-var ExpressAdapter = class {
-  /**
-   * Creates a new ExpressAdapter instance.
-   *
-   * @param req - The Express request object
-   */
-  constructor(req) {
-    this.req = req;
-  }
-  /**
-   * Gets a header value from the request.
-   *
-   * @param name - The header name
-   * @returns The header value or undefined
-   */
-  getHeader(name) {
-    const value = this.req.header(name);
-    return Array.isArray(value) ? value[0] : value;
-  }
-  /**
-   * Gets the HTTP method of the request.
-   *
-   * @returns The HTTP method
-   */
-  getMethod() {
-    return this.req.method;
-  }
-  /**
-   * Gets the path of the request.
-   *
-   * @returns The request path
-   */
-  getPath() {
-    return this.req.path;
-  }
-  /**
-   * Gets the full URL of the request.
-   *
-   * @returns The full request URL
-   */
-  getUrl() {
-    return `${this.req.protocol}://${this.req.headers.host}${this.req.originalUrl}`;
-  }
-  /**
-   * Gets the Accept header from the request.
-   *
-   * @returns The Accept header value or empty string
-   */
-  getAcceptHeader() {
-    return this.req.header("Accept") || "";
-  }
-  /**
-   * Gets the User-Agent header from the request.
-   *
-   * @returns The User-Agent header value or empty string
-   */
-  getUserAgent() {
-    return this.req.header("User-Agent") || "";
-  }
-  /**
-   * Gets all query parameters from the request URL.
-   *
-   * @returns Record of query parameter key-value pairs
-   */
-  getQueryParams() {
-    return this.req.query;
-  }
-  /**
-   * Gets a specific query parameter by name.
-   *
-   * @param name - The query parameter name
-   * @returns The query parameter value(s) or undefined
-   */
-  getQueryParam(name) {
-    const value = this.req.query[name];
-    return value;
-  }
-  /**
-   * Gets the parsed request body.
-   * Requires express.json() or express.urlencoded() middleware.
-   *
-   * @returns The parsed request body
-   */
-  getBody() {
-    return this.req.body;
-  }
-};
-function sendFacilitatorError(res, error) {
-  res.status(502).json({ error: error.message });
-}
-function paymentMiddlewareFromHTTPServer(httpServer, paywallConfig, paywall, syncFacilitatorOnStart = true) {
-  if (paywall) {
-    httpServer.registerPaywallProvider(paywall);
-  }
-  let initPromise = syncFacilitatorOnStart ? httpServer.initialize() : null;
-  let isInitialized = false;
-  async function initializeHttpServer() {
-    if (!syncFacilitatorOnStart || isInitialized) {
-      return;
-    }
-    if (!initPromise) {
-      initPromise = httpServer.initialize();
-    }
-    try {
-      await initPromise;
-      isInitialized = true;
-    } catch (error) {
-      initPromise = null;
-      throw error;
-    }
-  }
-  return async (req, res, next) => {
-    const adapter = new ExpressAdapter(req);
-    const context = {
-      adapter,
-      path: req.path,
-      method: req.method,
-      paymentHeader: adapter.getHeader("payment-signature") || adapter.getHeader("x-payment")
-    };
-    if (!httpServer.requiresPayment(context)) {
-      return next();
-    }
-    if (syncFacilitatorOnStart && !isInitialized) {
-      try {
-        await initializeHttpServer();
-      } catch (error) {
-        const facilitatorError = getFacilitatorResponseError(error);
-        if (facilitatorError) {
-          sendFacilitatorError(res, facilitatorError);
-          return;
-        }
-        return next(error);
-      }
-    }
-    let result;
-    try {
-      result = await httpServer.processHTTPRequest(context, paywallConfig);
-    } catch (error) {
-      if (error instanceof FacilitatorResponseError) {
-        sendFacilitatorError(res, error);
-        return;
-      }
-      return next(error);
-    }
-    switch (result.type) {
-      case "no-payment-required":
-        return next();
-      case "payment-error":
-        const { response } = result;
-        res.status(response.status);
-        Object.entries(response.headers).forEach(([key, value]) => {
-          res.setHeader(key, value);
-        });
-        if (response.isHtml) {
-          res.send(response.body);
-        } else {
-          res.json(response.body || {});
-        }
-        return;
-      case "payment-verified":
-        const { paymentPayload, paymentRequirements, declaredExtensions } = result;
-        const originalWriteHead = res.writeHead.bind(res);
-        const originalWrite = res.write.bind(res);
-        const originalEnd = res.end.bind(res);
-        const originalFlushHeaders = res.flushHeaders.bind(res);
-        let bufferedCalls = [];
-        let settled = false;
-        let endCalled;
-        const endPromise = new Promise((resolve) => {
-          endCalled = resolve;
-        });
-        res.writeHead = function(...args) {
-          if (!settled) {
-            bufferedCalls.push(["writeHead", args]);
-            return res;
-          }
-          return originalWriteHead(...args);
-        };
-        res.write = function(...args) {
-          if (!settled) {
-            bufferedCalls.push(["write", args]);
-            return true;
-          }
-          return originalWrite(...args);
-        };
-        res.end = function(...args) {
-          if (!settled) {
-            bufferedCalls.push(["end", args]);
-            endCalled();
-            return res;
-          }
-          return originalEnd(...args);
-        };
-        res.flushHeaders = function() {
-          if (!settled) {
-            bufferedCalls.push(["flushHeaders", []]);
-            return;
-          }
-          return originalFlushHeaders();
-        };
-        next();
-        await endPromise;
-        if (res.statusCode >= 400) {
-          settled = true;
-          res.writeHead = originalWriteHead;
-          res.write = originalWrite;
-          res.end = originalEnd;
-          res.flushHeaders = originalFlushHeaders;
-          for (const [method, args] of bufferedCalls) {
-            if (method === "writeHead")
-              originalWriteHead(...args);
-            else if (method === "write")
-              originalWrite(...args);
-            else if (method === "end") originalEnd(...args);
-            else if (method === "flushHeaders") originalFlushHeaders();
-          }
-          bufferedCalls = [];
-          return;
-        }
-        try {
-          const responseBody = Buffer.concat(
-            bufferedCalls.flatMap(
-              ([m, args]) => (m === "write" || m === "end") && args[0] ? [Buffer.from(args[0])] : []
-            )
-          );
-          const overridesHeaderValue = res.getHeader(SETTLEMENT_OVERRIDES_HEADER);
-          const responseHeaders = {};
-          if (overridesHeaderValue) {
-            responseHeaders[SETTLEMENT_OVERRIDES_HEADER] = String(overridesHeaderValue);
-            res.removeHeader(SETTLEMENT_OVERRIDES_HEADER);
-          }
-          const settleResult = await httpServer.processSettlement(
-            paymentPayload,
-            paymentRequirements,
-            declaredExtensions,
-            { request: context, responseBody, responseHeaders }
-          );
-          if (!settleResult.success) {
-            bufferedCalls = [];
-            const { response: response2 } = settleResult;
-            Object.entries(response2.headers).forEach(([key, value]) => {
-              res.setHeader(key, value);
-            });
-            if (response2.isHtml) {
-              res.status(response2.status).send(response2.body);
-            } else {
-              res.status(response2.status).json(response2.body ?? {});
-            }
-            return;
-          }
-          Object.entries(settleResult.headers).forEach(([key, value]) => {
-            res.setHeader(key, value);
-          });
-        } catch (error) {
-          if (error instanceof FacilitatorResponseError) {
-            bufferedCalls = [];
-            sendFacilitatorError(res, error);
-            return;
-          }
-          console.error(error);
-          bufferedCalls = [];
-          res.status(402).json({});
-          return;
-        } finally {
-          settled = true;
-          res.writeHead = originalWriteHead;
-          res.write = originalWrite;
-          res.end = originalEnd;
-          res.flushHeaders = originalFlushHeaders;
-          for (const [method, args] of bufferedCalls) {
-            if (method === "writeHead")
-              originalWriteHead(...args);
-            else if (method === "write")
-              originalWrite(...args);
-            else if (method === "end") originalEnd(...args);
-            else if (method === "flushHeaders") originalFlushHeaders();
-          }
-          bufferedCalls = [];
-        }
-        return;
-    }
-  };
-}
-function paymentMiddleware(routes, server, paywallConfig, paywall, syncFacilitatorOnStart = true) {
-  const httpServer = new x402HTTPResourceServer(server, routes);
-  return paymentMiddlewareFromHTTPServer(
-    httpServer,
-    paywallConfig,
-    paywall,
-    syncFacilitatorOnStart
-  );
-}
-
-// node_modules/@okxweb3/x402-evm/dist/esm/chunk-A7UQ7D5C.mjs
-var DEFAULT_STABLECOINS = {
-  "eip155:196": {
-    address: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-    name: "USD\u20AE0",
-    version: "1",
-    decimals: 6
-  },
-  // X Layer mainnet USDT0 (EIP-3009)
-  "eip155:1952": {
-    address: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c",
-    name: "USD\u20AE0",
-    version: "1",
-    decimals: 6
-  }
-};
-function getDefaultAsset(network) {
-  const info = DEFAULT_STABLECOINS[network];
-  if (!info) {
-    throw new Error(`No default asset configured for network ${network}`);
-  }
-  return info;
-}
-
-// node_modules/@okxweb3/x402-evm/dist/esm/exact/server/index.mjs
-var ExactEvmScheme = class {
-  constructor() {
-    this.scheme = "exact";
-    this.moneyParsers = [];
-  }
-  /**
-   * Register a custom money parser in the parser chain.
-   * Multiple parsers can be registered - they will be tried in registration order.
-   * Each parser receives a decimal amount (e.g., 1.50 for $1.50).
-   * If a parser returns null, the next parser in the chain will be tried.
-   * The default parser is always the final fallback.
-   *
-   * @param parser - Custom function to convert amount to AssetAmount (or null to skip)
-   * @returns The server instance for chaining
-   *
-   * @example
-   * evmServer.registerMoneyParser(async (amount, network) => {
-   *   // Custom conversion logic
-   *   if (amount > 100) {
-   *     // Use different token for large amounts
-   *     return { amount: (amount * 1e18).toString(), asset: "0xCustomToken" };
-   *   }
-   *   return null; // Use next parser
-   * });
-   */
-  registerMoneyParser(parser) {
-    this.moneyParsers.push(parser);
-    return this;
-  }
-  /**
-   * Parses a price into an asset amount.
-   * If price is already an AssetAmount, returns it directly.
-   * If price is Money (string | number), parses to decimal and tries custom parsers.
-   * Falls back to default conversion if all custom parsers return null.
-   *
-   * @param price - The price to parse
-   * @param network - The network to use
-   * @returns Promise that resolves to the parsed asset amount
-   */
-  async parsePrice(price, network) {
-    if (typeof price === "object" && price !== null && "amount" in price) {
-      if (!price.asset) {
-        throw new Error(`Asset address must be specified for AssetAmount on network ${network}`);
-      }
-      return {
-        amount: price.amount,
-        asset: price.asset,
-        extra: price.extra || {}
-      };
-    }
-    const amount = this.parseMoneyToDecimal(price);
-    for (const parser of this.moneyParsers) {
-      const result = await parser(amount, network);
-      if (result !== null) {
-        return result;
-      }
-    }
-    return this.defaultMoneyConversion(amount, network);
-  }
-  /**
-   * Build payment requirements for this scheme/network combination
-   *
-   * @param paymentRequirements - The base payment requirements
-   * @param supportedKind - The supported kind from facilitator (unused)
-   * @param supportedKind.x402Version - The x402 version
-   * @param supportedKind.scheme - The logical payment scheme
-   * @param supportedKind.network - The network identifier in CAIP-2 format
-   * @param supportedKind.extra - Optional extra metadata regarding scheme/network implementation details
-   * @param extensionKeys - Extension keys supported by the facilitator (unused)
-   * @returns Payment requirements ready to be sent to clients
-   */
-  enhancePaymentRequirements(paymentRequirements, supportedKind, extensionKeys) {
-    void supportedKind;
-    void extensionKeys;
-    return Promise.resolve(paymentRequirements);
-  }
-  /**
-   * Parse Money (string | number) to a decimal number.
-   * Handles formats like "$1.50", "1.50", 1.50, etc.
-   *
-   * @param money - The money value to parse
-   * @returns Decimal number
-   */
-  parseMoneyToDecimal(money) {
-    if (typeof money === "number") {
-      return money;
-    }
-    const cleanMoney = money.replace(/^\$/, "").trim();
-    const amount = parseFloat(cleanMoney);
-    if (isNaN(amount)) {
-      throw new Error(`Invalid money format: ${money}`);
-    }
-    return amount;
-  }
-  /**
-   * Converts a numeric dollar amount to an AssetAmount using the default token for the network.
-   *
-   * @param amount - The dollar amount as a number
-   * @param network - The target network
-   * @returns The converted asset amount with token metadata
-   */
-  defaultMoneyConversion(amount, network) {
-    const assetInfo = getDefaultAsset(network);
-    const tokenAmount = this.convertToTokenAmount(amount.toString(), assetInfo.decimals);
-    const includeEip712Domain = !assetInfo.assetTransferMethod || assetInfo.supportsEip2612;
-    return {
-      amount: tokenAmount,
-      asset: assetInfo.address,
-      extra: {
-        ...includeEip712Domain && {
-          name: assetInfo.name,
-          version: assetInfo.version
-        },
-        ...assetInfo.assetTransferMethod && {
-          assetTransferMethod: assetInfo.assetTransferMethod
-        }
-      }
-    };
-  }
-  /**
-   * Converts a decimal string amount to an integer token amount using the given decimals.
-   *
-   * @param decimalAmount - The amount as a decimal string (e.g. "1.5")
-   * @param decimals - The number of decimal places for the token
-   * @returns The token amount as an integer string in smallest units
-   */
-  convertToTokenAmount(decimalAmount, decimals) {
-    const amount = parseFloat(decimalAmount);
-    if (isNaN(amount)) {
-      throw new Error(`Invalid amount: ${decimalAmount}`);
-    }
-    const [intPart, decPart = ""] = String(amount).split(".");
-    const paddedDec = decPart.padEnd(decimals, "0").slice(0, decimals);
-    const tokenAmount = (intPart + paddedDec).replace(/^0+/, "") || "0";
-    return tokenAmount;
-  }
-};
 
 // src/server.ts
 var app = (0, import_express.default)();
 app.use(import_express.default.json());
 var PORT = parseInt(process.env.PORT || "4021");
 var XLAYER_ADDRESS = "0x5ec145b3bad6a80d3a96e2b65b3e13fbab3be431";
-var PRICE = "$5";
+var PRICE = "5000000";
 var OKX_API_KEY = "7bdbe763-b178-4506-974c-c6d358670f2e";
 var OKX_SECRET_KEY = "272D490653106A716B0B8562370D434D";
 var OKX_PASSPHRASE = "Yangchaowang918$";
-if (!OKX_API_KEY || !OKX_SECRET_KEY || !OKX_PASSPHRASE) {
-  console.error("\u274C Missing OKX API credentials. Set OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE env vars.");
-  console.error("   Get them at: https://web3.okx.com/onchain-os/dev-portal");
-  process.exit(1);
-}
 var facilitatorClient = new OKXFacilitatorClient({
   apiKey: OKX_API_KEY,
   secretKey: OKX_SECRET_KEY,
@@ -30423,88 +29392,52 @@ var facilitatorClient = new OKXFacilitatorClient({
 });
 var resourceServer = new x402ResourceServer(facilitatorClient).register(
   "eip155:196",
-  // XLayer mainnet
   new ExactEvmScheme()
 );
-app.use(
-  paymentMiddleware(
-    {
-      "POST /mcp/us-yield-hunter": {
-        accepts: {
-          scheme: "exact",
-          price: PRICE,
-          network: "eip155:196",
-          payTo: XLAYER_ADDRESS
-        },
-        description: "US stock yield & bottleneck scan \u2014 Serenity supply-chain analysis + hidden dividend picks + portfolio construction. Chinese/English.",
-        mimeType: "application/json"
-      }
+var paymentOptions = {
+  "POST /mcp/us-yield-hunter": {
+    accepts: {
+      scheme: "exact",
+      price: PRICE,
+      network: "eip155:196",
+      payTo: XLAYER_ADDRESS
     },
-    resourceServer
-  )
-);
+    description: "US stock yield & bottleneck scan \u2014 Serenity supply-chain analysis + hidden dividend picks + portfolio construction. Chinese/English.",
+    mimeType: "application/json"
+  }
+};
 app.post("/mcp/us-yield-hunter", async (req, res) => {
   try {
-    const { focus_sectors, style, language } = req.body || {};
-    const prompt = buildPrompt({ focus_sectors, style, language });
-    const report = await runAnalysis(prompt);
-    res.json({
-      success: true,
-      agent: "US Yield & Bottleneck Hunter",
-      agentId: "5149",
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      report,
-      credits: {
-        clawby_api_calls: "3-5",
-        web_searches: "4-6",
-        model: "deepseek-v4-pro"
-      }
-    });
-  } catch (error) {
-    console.error("Analysis error:", error);
-    res.status(500).json({
-      success: false,
-      error: error.message || "Analysis failed"
-    });
+    const paymentResult = await resourceServer.verify(req, paymentOptions);
+    if (!paymentResult.isValid) {
+      const challenge = await resourceServer.createChallenge(req, paymentOptions);
+      res.setHeader("PAYMENT-REQUIRED", challenge);
+      return res.status(402).json({});
+    }
+    const { focus_sectors, style, language = "zh" } = req.body || {};
+    const report = `Serenity \u7F8E\u80A1\u74F6\u9888\u4E0E\u6536\u76CA\u7814\u62A5\uFF08\u5360\u4F4D\uFF09
+
+\u7528\u6237\u8BF7\u6C42: ${JSON.stringify({ focus_sectors, style, language })}
+
+\uFF08\u6B63\u5F0F\u7248\u672C\u4F1A\u8C03\u7528 Hermes \u540E\u7AEF\u751F\u6210\u5B8C\u6574 3000+ \u5B57\u62A5\u544A\uFF09
+
+\u5F53\u524D\u4E3A Railway \u9A8C\u8BC1\u901A\u8FC7\u7248\u672C\u3002`;
+    res.json({ report });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal error" });
   }
 });
-app.get("/health", (_req, res) => {
+app.get("/health", (req, res) => {
   res.json({ status: "ok", agent: "US Yield & Bottleneck Hunter", agentId: "5149" });
 });
 app.listen(PORT, () => {
   console.log(`\u{1F52C} US Yield & Bottleneck Hunter - x402 MCP Server`);
   console.log(`   Port: ${PORT}`);
   console.log(`   Endpoint: POST /mcp/us-yield-hunter`);
-  console.log(`   Price: ${PRICE} USDT on XLayer`);
+  console.log(`   Price: $5 USDT on XLayer`);
   console.log(`   Pay to: ${XLAYER_ADDRESS}`);
 });
-function buildPrompt(params) {
-  const sectors = params.focus_sectors || "all";
-  const style = params.style || "balanced";
-  const lang = params.language || "zh";
-  return `Run a full US market scan using the us-yield-bottleneck-hunter skill.
-
-Parameters:
-- focus_sectors: ${sectors}
-- style: ${style}
-- language: ${lang}
-
-Follow the skill workflow exactly:
-1. Fetch market snapshot + sector rotation data via Clawby Data
-2. Run Serenity deep supply-chain bottleneck analysis (2 directions minimum, 800+ words each, with evidence chains)
-3. Screen hidden yield picks across categories (Treasuries, Covered Call ETFs, BDCs, MLPs, CLOs, CEFs, REITs)
-4. Build portfolios tiered by risk
-5. Output summary + watchlist
-
-Use real data from Clawby API and web_search. Every claim must cite a source. Output in ${lang === "zh" ? "Chinese" : "English"}.`;
-}
-async function runAnalysis(prompt) {
-  return `This is a placeholder. In production, the Hermes agent processes this request:
-${prompt.substring(0, 200)}...
-
-Full analysis with Serenity methodology, Clawby Data, and real-time market data
-will be generated by the Hermes LLM backend.`;
-}
 /*! Bundled license information:
 
 depd/index.js:
