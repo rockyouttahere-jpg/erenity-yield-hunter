@@ -1,8 +1,2 @@
-node_modules/*
-!node_modules/@okxweb3
-!node_modules/@okxweb3/**
-!node_modules/zod
-!node_modules/zod/**
-!node_modules/viem
-!node_modules/viem/**
+node_modules/
 .env
