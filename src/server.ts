@@ -52,18 +52,6 @@ app.use(
   )
 );
 
-// Force PAYMENT-REQUIRED header to uppercase (OKX validator is strict)
-app.use((req, res, next) => {
-  const originalSetHeader = res.setHeader.bind(res);
-  res.setHeader = function(name, value) {
-    if (name.toLowerCase() === 'payment-required') {
-      return originalSetHeader('PAYMENT-REQUIRED', value);
-    }
-    return originalSetHeader(name, value);
-  };
-  next();
-});
-
 // ===== MCP ENDPOINT =====
 app.post("/mcp/us-yield-hunter", async (req, res) => {
   try {
