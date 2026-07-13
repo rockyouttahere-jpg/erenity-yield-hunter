@@ -30408,9 +30408,9 @@ app.use(import_express.default.json());
 var PORT = parseInt(process.env.PORT || "4021");
 var XLAYER_ADDRESS = "0x5ec145b3bad6a80d3a96e2b65b3e13fbab3be431";
 var PRICE = "$5";
-var OKX_API_KEY = process.env.OKX_API_KEY || "";
-var OKX_SECRET_KEY = process.env.OKX_SECRET_KEY || "";
-var OKX_PASSPHRASE = process.env.OKX_PASSPHRASE || "";
+var OKX_API_KEY = "7bdbe763-b178-4506-974c-c6d358670f2e";
+var OKX_SECRET_KEY = "272D490653106A716B0B8562370D434D";
+var OKX_PASSPHRASE = "Yangchaowang918$";
 if (!OKX_API_KEY || !OKX_SECRET_KEY || !OKX_PASSPHRASE) {
   console.error("\u274C Missing OKX API credentials. Set OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE env vars.");
   console.error("   Get them at: https://web3.okx.com/onchain-os/dev-portal");

@@ -13,9 +13,9 @@ const PRICE = "$5"; // 5 USDT per scan
 
 // ===== x402 SETUP =====
 // Requires OKX API credentials from https://web3.okx.com/onchain-os/dev-portal
-const OKX_API_KEY = process.env.OKX_API_KEY || "";
-const OKX_SECRET_KEY = process.env.OKX_SECRET_KEY || "";
-const OKX_PASSPHRASE = process.env.OKX_PASSPHRASE || "";
+const OKX_API_KEY="7bdbe763-b178-4506-974c-c6d358670f2e";
+const OKX_SECRET_KEY="272D490653106A716B0B8562370D434D";
+const OKX_PASSPHRASE="Yangchaowang918$";
 
 if (!OKX_API_KEY || !OKX_SECRET_KEY || !OKX_PASSPHRASE) {
   console.error("❌ Missing OKX API credentials. Set OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE env vars.");
