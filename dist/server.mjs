@@ -30443,6 +30443,16 @@ app.use(
     resourceServer
   )
 );
+app.use((req, res, next) => {
+  const originalSetHeader = res.setHeader.bind(res);
+  res.setHeader = function(name, value) {
+    if (name.toLowerCase() === "payment-required") {
+      return originalSetHeader("PAYMENT-REQUIRED", value);
+    }
+    return originalSetHeader(name, value);
+  };
+  next();
+});
 app.post("/mcp/us-yield-hunter", async (req, res) => {
   try {
     const { focus_sectors, style, language } = req.body || {};
