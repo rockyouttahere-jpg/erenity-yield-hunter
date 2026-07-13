@@ -2,18 +2,21 @@
   "name": "us-yield-hunter-mcp",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx src/server.ts",
     "start": "tsx src/server.ts"
   },
   "dependencies": {
-    "@okxweb3/x402-core": "*",
-    "@okxweb3/x402-evm": "*",
-    "@okxweb3/x402-express": "*",
-    "express": "*",
-    "tsx": "*",
-    "typescript": "*",
-    "@types/express": "*",
-    "@types/node": "*"
+    "@okxweb3/x402-core": "^0.1.0",
+    "@okxweb3/x402-evm": "^0.2.1",
+    "@okxweb3/x402-express": "^0.1.1",
+    "express": "^5.2.1",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.1"
   }
 }
