@@ -1,0 +1,19 @@
+{
+  "name": "us-yield-hunter-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@okxweb3/x402-core": "*",
+    "@okxweb3/x402-evm": "*",
+    "@okxweb3/x402-express": "*",
+    "express": "*",
+    "tsx": "*",
+    "typescript": "*",
+    "@types/express": "*",
+    "@types/node": "*"
+  }
+}
