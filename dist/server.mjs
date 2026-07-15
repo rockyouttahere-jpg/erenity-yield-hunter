@@ -30410,8 +30410,8 @@ var OKX_API_KEY = process.env.OKX_API_KEY || "7bdbe763-b178-4506-974c-c6d358670f
 var OKX_SECRET_KEY = process.env.OKX_SECRET_KEY || "272D490653106A716B0B8562370D434D";
 var OKX_PASSPHRASE = process.env.OKX_PASSPHRASE || "Yangchaowang918$";
 var XLAYER_ADDRESS = process.env.XLAYER_ADDRESS || "0x5ec145b3bad6a80d3a96e2b65b3e13fbab3be431";
-var CLAWBY_API_KEY = process.env.CLAWBY_API_KEY || "";
-var DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
+var CLAWBY_API_KEY = process.env.CLAWBY_API_KEY || "pk_B4C0KH1N-GC8ST60IqwOwj41BD5QpOfn";
+var DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "sk-a84c3f3c2f004aac9786714153fe6976";
 var facilitatorClient = new OKXFacilitatorClient({
   apiKey: OKX_API_KEY,
   secretKey: OKX_SECRET_KEY,
