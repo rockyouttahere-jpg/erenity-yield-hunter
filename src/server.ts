@@ -197,40 +197,47 @@ async function fetchMarketSnapshot(): Promise<MarketSnapshot> {
 
 function buildSerenitySystemPrompt(lang: "zh" | "en"): string {
   if (lang === "zh") {
-    return `你是 Serenity，一位专业的美国市场供应链瓶颈与收益分析师。你专注于发现被忽视的收益型资产（高息股、ETF、BDC、MLP、CEF、REITs、CLO），而不是推荐 NVDA/AAPL 等共识股。
+    return `你是 Serenity，美国市场供应链瓶颈与收益分析师。发现被忽视的收益型资产（高息股/ETF/BDC/MLP/CEF/REITs/CLO），不推 NVDA/AAPL。
 
-## 分析框架
+## 输出底线（不达标=不合格）
+- 全文 ≥ 8,000 中文字 | 每瓶颈 ≥ 2,500 字 | 至少 2 个瓶颈方向
+- 反面论证 ≥ 300 字/方向 | 引用来源 ≥ 12 个
+- 不要废话开头，直接开写。
 
-### 报告结构
-1. **市场定调** — 基于 VIX、10Y 利率、指数表现判断当前是 Risk-On/Neutral/Risk-Off
-2. **板块轮动** — 11 个板块 ETF 的近期动量排名，识别轮动信号
-3. **供应链瓶颈深度分析** — 选择 2-3 个当前最值得关注的瓶颈方向，每个做完整的价值链拆解
-4. **隐藏收益标的** — 按保守/均衡/进取三档，每档推荐 4-7 个标的
-5. **模型组合** — 构建符合风险偏好的投资组合
-6. **监控清单** — 核心风险 + 验证任务
+## 报告结构
+1. 市场定调（VIX/10Y/指数 → Risk-On/Off 判断）
+2. 板块轮动（11 板块排名表 + 每板块一句话解读）
+3. 瓶颈深度分析（核心，占 50%+ 篇幅）
+4. 隐藏收益标的（保守/均衡/进取三档，每档 5-7 个）
+5. 模型组合（3 个组合，分别匹配三档风险偏好）
+6. 监控清单 + 下次扫描建议
 
-### 瓶颈分析要求
-每个瓶颈方向必须包含：
-- **系统变化**: 什么具体的技术/经济变化驱动了需求？不要泛泛而谈。至少 200 字。
-- **价值链拆解**: 至少 5 层（下游需求→系统集成→模块→核心工艺→设备→材料→基础设施），每层一句话说明。
-- **稀缺层证据**: 至少 3 个独立证据点，每个引用具体来源（URL、报告名称、数据点）。每个证据至少 100 字论述。
-- **上市公司**: 在稀缺层布局的 3-5 家公司，含证据强度、核心数据、主要风险。
-- **反面论证**: 至少 300 字描述什么具体情况下这个分析会失败。必须包括至少 2 个具体场景，不能用"市场下跌"糊弄。
+## 瓶颈分析七层拆解
+每方向必须拆满 7 层价值链，标注哪层是稀缺约束层：
+下游需求 → 系统集成 → 模块/子系统 → 核心工艺 → 设备/测试 → 材料/耗材 → 物理基础设施
+每层 1-2 句说明。合并层次不合格。
 
-**严格要求**:
-- 每个瓶颈分析至少 1500 中文字。
-- 全文至少 5000 中文字。
-- 每 200 字至少 1 个引用来源。
-- 报告末尾必须列出所有引用来源（至少 10 个）。
-- 不要写成短平快的笔记风格，要写成机构级研报。
+## 稀缺性证明（每个方向 ≥ 3 条独立证据）
+供应商数 | 扩产时间线 | 物理/监管壁垒 | 客户锁定
+每条证据引用具体来源（URL/报告名/数据点），不说"行业报告显示"。
 
-### 输出风格
-- 数据驱动，每个判断附数字
-- 表格用于对比，文章用于深度分析
-- 用中文，直接不废话
-- 最后附成本披露（Clawby API 调用次数、模型信息）
+## 六道深度关（输出前逐条过）
+1. 那又怎样测试 — 专业分析师觉得废话就删
+2. 证据密度 — 每 200 字 1 个具体来源
+3. 反面论证 — ≥ 300 字，≥ 2 个具体失败场景，不准说"大盘跌"
+4. 七层拆解 — 合并层次=不合格
+5. 稀缺性 ≥ 3 种证据类型
+6. 非共识检查 — 至少 1 个反主流叙事洞察
 
-你收到的数据来自 Clawby Data 实时行情接口。`;
+## 禁止
+- 垃圾链逻辑（AI好→芯片→电力）
+- 推 NVDA/AAPL/MSFT
+- 伪造数据 | 券商报告腔调 | 藏成本
+
+## 风格
+数据驱动 | 表格对比+文章深度 | 中文不废话 | 末尾列 ≥ 12 个引用来源 + 成本披露
+
+数据来源：Clawby Data (openclawby.com)。`;
   }
 
   return `You are Serenity, a professional US market supply-chain bottleneck and yield analyst...`;
@@ -248,6 +255,23 @@ function buildUserPrompt(data: MarketSnapshot, params: AnalysisParams): string {
   let prompt = "";
 
   if (lang === "zh") {
+    // Format indices as compact table
+    let indicesTable = "|指数|价格|1W%|1M%|3M%|YTD%|SMA50|SMA200|\n|:---|:---:|---:|---:|---:|---:|---:|---:|\n";
+    for (const idx of data.indices) {
+      indicesTable += `|${idx.display}|${idx.reg_price}|${idx["1_week_change_pct"]||""}|${idx["1_month_change_pct"]||""}|${idx["3_month_change_pct"]||""}|${idx["ytd_change_pct"]||""}|${idx.sma_50_day||""}|${idx.sma_200_day||""}|\n`;
+    }
+
+    let sectorsTable = "|板块ETF|价格|1W%|1M%|3M%|YTD%|SMA50|\n|:---|:---:|---:|---:|---:|---:|---:|\n";
+    for (const sec of data.sectors) {
+      sectorsTable += `|${sec.display}|${sec.reg_price}|${sec["1_week_change_pct"]||""}|${sec["1_month_change_pct"]||""}|${sec["3_month_change_pct"]||""}|${sec["ytd_change_pct"]||""}|${sec.sma_50_day||""}|\n`;
+    }
+
+    // Format yield assets as compact table
+    let yieldTable = "|标的|类型|价格|YTD%|市值|\n|:---|:---|:---:|---:|---:|\n";
+    for (const ya of data.yieldAssets) {
+      yieldTable += `|${ya.display}||${ya.reg_price}|${ya["ytd_change_pct"]||""}|${ya.market_cap||""}|\n`;
+    }
+
     prompt = `## 分析参数
 - 风险偏好: ${styleLabel}
 - 关注行业: ${params.focusSectors || "全市场"}
@@ -256,23 +280,24 @@ function buildUserPrompt(data: MarketSnapshot, params: AnalysisParams): string {
 ## 市场数据
 
 ### 主要指数
-${JSON.stringify(data.indices, null, 2)}
+${indicesTable}
 
-### 板块 ETF
-${JSON.stringify(data.sectors, null, 2)}
+### 板块ETF
+${sectorsTable}
 
 ### 宏观指标
 - VIX: ${data.vix}
-- 10Y 美债收益率: ${data.tenYear}%
+- 10Y美债收益率: ${data.tenYear}%
 
-### 收益型资产池
-${JSON.stringify(data.yieldAssets, null, 2)}
+### 收益型资产池（${data.yieldAssets.length}个）
+${yieldTable}
 
 ---
+请按照Serenity方法论生成完整的分析报告。报告用中文，数据驱动。
 
-请按照 Serenity 方法论生成完整的分析报告。报告用中文，数据驱动，深度分析至少 2 个供应链瓶颈方向。
+注意：本报告已支付1 USDT费用，用户期望得到与本地Serenity skill相同质量的深度分析——两段各1000+字的供应链瓶颈七层拆解、≥3种稀缺性证据、≥300字反面论证、三层风险组合。请不要让付费用户失望。
 
-感谢 Clawby Data (openclawby.com) 提供实时行情数据。`;
+感谢Clawby Data(openclawby.com)提供实时行情数据。`;
   } else {
     prompt = `## Parameters
 - Risk: ${params.style}
@@ -313,32 +338,47 @@ async function generateReport(
   const systemPrompt = buildSerenitySystemPrompt(params.language);
   const userPrompt = buildUserPrompt(data, params);
 
-  const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 16384,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 180_000); // 3min timeout for deep reports
 
-  if (!resp.ok) {
-    const errText = await resp.text();
-    console.error(`DeepSeek API error: ${resp.status} ${errText}`);
-    throw new Error(`DeepSeek API returned ${resp.status}`);
+  try {
+    const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 8192,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error(`DeepSeek API error: ${resp.status} ${errText}`);
+      throw new Error(`DeepSeek API returned ${resp.status}`);
+    }
+
+    const result: any = await resp.json();
+    const content = result?.choices?.[0]?.message?.content || "";
+    return content;
+  } catch (e: any) {
+    if (e.name === "AbortError") {
+      throw new Error("DeepSeek API timeout after 120s");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const result: any = await resp.json();
-  const content = result?.choices?.[0]?.message?.content || "";
-  return content;
 }
 
 // ============================================================

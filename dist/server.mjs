@@ -30590,6 +30590,21 @@ function buildUserPrompt(data, params) {
   const styleLabel = params.style === "conservative" ? "\u4FDD\u5B88" : params.style === "aggressive" ? "\u8FDB\u53D6" : "\u5747\u8861";
   let prompt = "";
   if (lang === "zh") {
+    let indicesTable = "|\u6307\u6570|\u4EF7\u683C|1W%|1M%|3M%|YTD%|SMA50|SMA200|\n|:---|:---:|---:|---:|---:|---:|---:|---:|\n";
+    for (const idx of data.indices) {
+      indicesTable += `|${idx.display}|${idx.reg_price}|${idx["1_week_change_pct"] || ""}|${idx["1_month_change_pct"] || ""}|${idx["3_month_change_pct"] || ""}|${idx["ytd_change_pct"] || ""}|${idx.sma_50_day || ""}|${idx.sma_200_day || ""}|
+`;
+    }
+    let sectorsTable = "|\u677F\u5757ETF|\u4EF7\u683C|1W%|1M%|3M%|YTD%|SMA50|\n|:---|:---:|---:|---:|---:|---:|---:|\n";
+    for (const sec of data.sectors) {
+      sectorsTable += `|${sec.display}|${sec.reg_price}|${sec["1_week_change_pct"] || ""}|${sec["1_month_change_pct"] || ""}|${sec["3_month_change_pct"] || ""}|${sec["ytd_change_pct"] || ""}|${sec.sma_50_day || ""}|
+`;
+    }
+    let yieldTable = "|\u6807\u7684|\u7C7B\u578B|\u4EF7\u683C|YTD%|\u5E02\u503C|\n|:---|:---|:---:|---:|---:|\n";
+    for (const ya of data.yieldAssets) {
+      yieldTable += `|${ya.display}||${ya.reg_price}|${ya["ytd_change_pct"] || ""}|${ya.market_cap || ""}|
+`;
+    }
     prompt = `## \u5206\u6790\u53C2\u6570
 - \u98CE\u9669\u504F\u597D: ${styleLabel}
 - \u5173\u6CE8\u884C\u4E1A: ${params.focusSectors || "\u5168\u5E02\u573A"}
@@ -30598,23 +30613,24 @@ function buildUserPrompt(data, params) {
 ## \u5E02\u573A\u6570\u636E
 
 ### \u4E3B\u8981\u6307\u6570
-${JSON.stringify(data.indices, null, 2)}
+${indicesTable}
 
-### \u677F\u5757 ETF
-${JSON.stringify(data.sectors, null, 2)}
+### \u677F\u5757ETF
+${sectorsTable}
 
 ### \u5B8F\u89C2\u6307\u6807
 - VIX: ${data.vix}
-- 10Y \u7F8E\u503A\u6536\u76CA\u7387: ${data.tenYear}%
+- 10Y\u7F8E\u503A\u6536\u76CA\u7387: ${data.tenYear}%
 
-### \u6536\u76CA\u578B\u8D44\u4EA7\u6C60
-${JSON.stringify(data.yieldAssets, null, 2)}
+### \u6536\u76CA\u578B\u8D44\u4EA7\u6C60\uFF08${data.yieldAssets.length}\u4E2A\uFF09
+${yieldTable}
 
 ---
+\u8BF7\u6309\u7167Serenity\u65B9\u6CD5\u8BBA\u751F\u6210\u5B8C\u6574\u7684\u5206\u6790\u62A5\u544A\u3002\u62A5\u544A\u7528\u4E2D\u6587\uFF0C\u6570\u636E\u9A71\u52A8\u3002
 
-\u8BF7\u6309\u7167 Serenity \u65B9\u6CD5\u8BBA\u751F\u6210\u5B8C\u6574\u7684\u5206\u6790\u62A5\u544A\u3002\u62A5\u544A\u7528\u4E2D\u6587\uFF0C\u6570\u636E\u9A71\u52A8\uFF0C\u6DF1\u5EA6\u5206\u6790\u81F3\u5C11 2 \u4E2A\u4F9B\u5E94\u94FE\u74F6\u9888\u65B9\u5411\u3002
+\u6CE8\u610F\uFF1A\u672C\u62A5\u544A\u5DF2\u652F\u4ED81 USDT\u8D39\u7528\uFF0C\u7528\u6237\u671F\u671B\u5F97\u5230\u4E0E\u672C\u5730Serenity skill\u76F8\u540C\u8D28\u91CF\u7684\u6DF1\u5EA6\u5206\u6790\u2014\u2014\u4E24\u6BB5\u54041000+\u5B57\u7684\u4F9B\u5E94\u94FE\u74F6\u9888\u4E03\u5C42\u62C6\u89E3\u3001\u22653\u79CD\u7A00\u7F3A\u6027\u8BC1\u636E\u3001\u2265300\u5B57\u53CD\u9762\u8BBA\u8BC1\u3001\u4E09\u5C42\u98CE\u9669\u7EC4\u5408\u3002\u8BF7\u4E0D\u8981\u8BA9\u4ED8\u8D39\u7528\u6237\u5931\u671B\u3002
 
-\u611F\u8C22 Clawby Data (openclawby.com) \u63D0\u4F9B\u5B9E\u65F6\u884C\u60C5\u6570\u636E\u3002`;
+\u611F\u8C22Clawby Data(openclawby.com)\u63D0\u4F9B\u5B9E\u65F6\u884C\u60C5\u6570\u636E\u3002`;
   } else {
     prompt = `## Parameters
 - Risk: ${params.style}
@@ -30649,7 +30665,7 @@ async function generateReport(data, params) {
   const systemPrompt = buildSerenitySystemPrompt(params.language);
   const userPrompt = buildUserPrompt(data, params);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12e4);
+  const timeoutId = setTimeout(() => controller.abort(), 18e4);
   try {
     const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
       method: "POST",
