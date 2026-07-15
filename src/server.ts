@@ -15,8 +15,8 @@ const OKX_PASSPHRASE = process.env.OKX_PASSPHRASE || "Yangchaowang918$";
 const XLAYER_ADDRESS = process.env.XLAYER_ADDRESS || "0x5ec145b3bad6a80d3a96e2b65b3e13fbab3be431";
 
 // Analysis API keys
-const CLAWBY_API_KEY = process.env.CLAWBY_API_KEY || "";
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
+const CLAWBY_API_KEY = process.env.CLAWBY_API_KEY || "pk_B4C0KH1N-GC8ST60IqwOwj41BD5QpOfn";
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "sk-a84c3f3c2f004aac9786714153fe6976";
 
 // Init facilitator client
 const facilitatorClient = new OKXFacilitatorClient({
@@ -211,11 +211,18 @@ function buildSerenitySystemPrompt(lang: "zh" | "en"): string {
 
 ### 瓶颈分析要求
 每个瓶颈方向必须包含：
-- **系统变化**: 什么具体的技术/经济变化驱动了需求？不要泛泛而谈
-- **价值链拆解**: 至少 5 层（下游需求→系统集成→模块→核心工艺→设备→材料→基础设施）
-- **稀缺层证据**: 至少 3 个独立证据点，引用具体来源
-- **上市公司**: 在稀缺层布局的公司，含证据强度
-- **反面论证**: 至少 200 字描述什么情况下这个分析会失败
+- **系统变化**: 什么具体的技术/经济变化驱动了需求？不要泛泛而谈。至少 200 字。
+- **价值链拆解**: 至少 5 层（下游需求→系统集成→模块→核心工艺→设备→材料→基础设施），每层一句话说明。
+- **稀缺层证据**: 至少 3 个独立证据点，每个引用具体来源（URL、报告名称、数据点）。每个证据至少 100 字论述。
+- **上市公司**: 在稀缺层布局的 3-5 家公司，含证据强度、核心数据、主要风险。
+- **反面论证**: 至少 300 字描述什么具体情况下这个分析会失败。必须包括至少 2 个具体场景，不能用"市场下跌"糊弄。
+
+**严格要求**:
+- 每个瓶颈分析至少 1500 中文字。
+- 全文至少 5000 中文字。
+- 每 200 字至少 1 个引用来源。
+- 报告末尾必须列出所有引用来源（至少 10 个）。
+- 不要写成短平快的笔记风格，要写成机构级研报。
 
 ### 输出风格
 - 数据驱动，每个判断附数字
@@ -319,7 +326,7 @@ async function generateReport(
         { role: "user", content: userPrompt },
       ],
       temperature: 0.7,
-      max_tokens: 8000,
+      max_tokens: 16384,
     }),
   });
 
