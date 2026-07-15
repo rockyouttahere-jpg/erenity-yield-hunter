@@ -30410,6 +30410,8 @@ var OKX_API_KEY = process.env.OKX_API_KEY || "7bdbe763-b178-4506-974c-c6d358670f
 var OKX_SECRET_KEY = process.env.OKX_SECRET_KEY || "272D490653106A716B0B8562370D434D";
 var OKX_PASSPHRASE = process.env.OKX_PASSPHRASE || "Yangchaowang918$";
 var XLAYER_ADDRESS = process.env.XLAYER_ADDRESS || "0x5ec145b3bad6a80d3a96e2b65b3e13fbab3be431";
+var CLAWBY_API_KEY = process.env.CLAWBY_API_KEY || "";
+var DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 var facilitatorClient = new OKXFacilitatorClient({
   apiKey: OKX_API_KEY,
   secretKey: OKX_SECRET_KEY,
@@ -30436,23 +30438,279 @@ app.use(
     resourceServer
   )
 );
-app.post("/mcp/us-yield-hunter", async (req, res) => {
+async function clawbyScreener(symbols, cols) {
+  const payload = JSON.stringify({
+    name: "Screen thousands of stocks on numerous fields",
+    params: {
+      symbol: symbols.join(","),
+      view_cols: cols,
+      region: "US",
+      per_page: 50
+    }
+  });
+  const resp = await fetch("https://api.openclawby.com/api/relay", {
+    method: "POST",
+    headers: {
+      "X-API-Key": CLAWBY_API_KEY,
+      "Content-Type": "application/json"
+    },
+    body: payload
+  });
+  if (!resp.ok) {
+    console.error(`Clawby screener failed: ${resp.status}`);
+    return [];
+  }
+  const data = await resp.json();
+  if (data?.data?.data) return data.data.data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+async function fetchVIXAnd10Y() {
+  let vix = "N/A";
+  let tenYr = "N/A";
   try {
+    const vixResp = await fetch(
+      "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d"
+    );
+    if (vixResp.ok) {
+      const vixData = await vixResp.json();
+      const quote = vixData?.chart?.result?.[0]?.indicators?.quote?.[0];
+      if (quote?.close?.length) {
+        vix = quote.close[quote.close.length - 1].toFixed(2);
+      }
+    }
+  } catch (e) {
+    console.error("VIX fetch failed:", e);
+  }
+  try {
+    const tnxResp = await fetch(
+      "https://query1.finance.yahoo.com/v8/finance/chart/%5ETNX?interval=1d&range=5d"
+    );
+    if (tnxResp.ok) {
+      const tnxData = await tnxResp.json();
+      const quote = tnxData?.chart?.result?.[0]?.indicators?.quote?.[0];
+      if (quote?.close?.length) {
+        tenYr = quote.close[quote.close.length - 1].toFixed(2);
+      }
+    }
+  } catch (e) {
+    console.error("10Y fetch failed:", e);
+  }
+  return { vix, tenYear: tenYr };
+}
+var SCREENER_COLS = "display,reg_price,reg_change_pct,1_week_change_pct,1_month_change_pct,3_month_change_pct,ytd_change_pct,market_cap,sma_50_day,sma_200_day";
+async function fetchMarketSnapshot() {
+  const indices = await clawbyScreener(
+    ["SPY", "QQQ", "IWM", "DIA"],
+    SCREENER_COLS
+  );
+  const sectors = await clawbyScreener(
+    ["XLF", "XLE", "XLK", "XLV", "XLI", "XLP", "XLY", "XLB", "XLU", "XLRE", "XLC"],
+    SCREENER_COLS
+  );
+  const { vix, tenYear } = await fetchVIXAnd10Y();
+  const ultraShort = await clawbyScreener(
+    ["SGOV", "BIL", "BILS"],
+    SCREENER_COLS
+  );
+  const coveredCall = await clawbyScreener(
+    ["JEPQ", "JEPI", "QYLD", "XYLD", "DIVO", "SVOL"],
+    SCREENER_COLS
+  );
+  const bdcMlp = await clawbyScreener(
+    ["ARCC", "CSWC", "MAIN", "HTGC", "PBDC", "ET", "EPD", "MPLX", "AM", "AMLP"],
+    SCREENER_COLS
+  );
+  const cloCef = await clawbyScreener(
+    ["JBBB", "CLOX", "PDI", "GOF", "UTF", "UTG", "RQI", "JFR"],
+    SCREENER_COLS
+  );
+  const reits = await clawbyScreener(
+    ["SPG", "O", "ADC", "STAG", "VICI"],
+    SCREENER_COLS
+  );
+  const yieldAssets = [
+    ...ultraShort,
+    ...coveredCall,
+    ...bdcMlp,
+    ...cloCef,
+    ...reits
+  ];
+  return { indices, sectors, vix, tenYear, yieldAssets };
+}
+function buildSerenitySystemPrompt(lang) {
+  if (lang === "zh") {
+    return `\u4F60\u662F Serenity\uFF0C\u4E00\u4F4D\u4E13\u4E1A\u7684\u7F8E\u56FD\u5E02\u573A\u4F9B\u5E94\u94FE\u74F6\u9888\u4E0E\u6536\u76CA\u5206\u6790\u5E08\u3002\u4F60\u4E13\u6CE8\u4E8E\u53D1\u73B0\u88AB\u5FFD\u89C6\u7684\u6536\u76CA\u578B\u8D44\u4EA7\uFF08\u9AD8\u606F\u80A1\u3001ETF\u3001BDC\u3001MLP\u3001CEF\u3001REITs\u3001CLO\uFF09\uFF0C\u800C\u4E0D\u662F\u63A8\u8350 NVDA/AAPL \u7B49\u5171\u8BC6\u80A1\u3002
+
+## \u5206\u6790\u6846\u67B6
+
+### \u62A5\u544A\u7ED3\u6784
+1. **\u5E02\u573A\u5B9A\u8C03** \u2014 \u57FA\u4E8E VIX\u300110Y \u5229\u7387\u3001\u6307\u6570\u8868\u73B0\u5224\u65AD\u5F53\u524D\u662F Risk-On/Neutral/Risk-Off
+2. **\u677F\u5757\u8F6E\u52A8** \u2014 11 \u4E2A\u677F\u5757 ETF \u7684\u8FD1\u671F\u52A8\u91CF\u6392\u540D\uFF0C\u8BC6\u522B\u8F6E\u52A8\u4FE1\u53F7
+3. **\u4F9B\u5E94\u94FE\u74F6\u9888\u6DF1\u5EA6\u5206\u6790** \u2014 \u9009\u62E9 2-3 \u4E2A\u5F53\u524D\u6700\u503C\u5F97\u5173\u6CE8\u7684\u74F6\u9888\u65B9\u5411\uFF0C\u6BCF\u4E2A\u505A\u5B8C\u6574\u7684\u4EF7\u503C\u94FE\u62C6\u89E3
+4. **\u9690\u85CF\u6536\u76CA\u6807\u7684** \u2014 \u6309\u4FDD\u5B88/\u5747\u8861/\u8FDB\u53D6\u4E09\u6863\uFF0C\u6BCF\u6863\u63A8\u8350 4-7 \u4E2A\u6807\u7684
+5. **\u6A21\u578B\u7EC4\u5408** \u2014 \u6784\u5EFA\u7B26\u5408\u98CE\u9669\u504F\u597D\u7684\u6295\u8D44\u7EC4\u5408
+6. **\u76D1\u63A7\u6E05\u5355** \u2014 \u6838\u5FC3\u98CE\u9669 + \u9A8C\u8BC1\u4EFB\u52A1
+
+### \u74F6\u9888\u5206\u6790\u8981\u6C42
+\u6BCF\u4E2A\u74F6\u9888\u65B9\u5411\u5FC5\u987B\u5305\u542B\uFF1A
+- **\u7CFB\u7EDF\u53D8\u5316**: \u4EC0\u4E48\u5177\u4F53\u7684\u6280\u672F/\u7ECF\u6D4E\u53D8\u5316\u9A71\u52A8\u4E86\u9700\u6C42\uFF1F\u4E0D\u8981\u6CDB\u6CDB\u800C\u8C08
+- **\u4EF7\u503C\u94FE\u62C6\u89E3**: \u81F3\u5C11 5 \u5C42\uFF08\u4E0B\u6E38\u9700\u6C42\u2192\u7CFB\u7EDF\u96C6\u6210\u2192\u6A21\u5757\u2192\u6838\u5FC3\u5DE5\u827A\u2192\u8BBE\u5907\u2192\u6750\u6599\u2192\u57FA\u7840\u8BBE\u65BD\uFF09
+- **\u7A00\u7F3A\u5C42\u8BC1\u636E**: \u81F3\u5C11 3 \u4E2A\u72EC\u7ACB\u8BC1\u636E\u70B9\uFF0C\u5F15\u7528\u5177\u4F53\u6765\u6E90
+- **\u4E0A\u5E02\u516C\u53F8**: \u5728\u7A00\u7F3A\u5C42\u5E03\u5C40\u7684\u516C\u53F8\uFF0C\u542B\u8BC1\u636E\u5F3A\u5EA6
+- **\u53CD\u9762\u8BBA\u8BC1**: \u81F3\u5C11 200 \u5B57\u63CF\u8FF0\u4EC0\u4E48\u60C5\u51B5\u4E0B\u8FD9\u4E2A\u5206\u6790\u4F1A\u5931\u8D25
+
+### \u8F93\u51FA\u98CE\u683C
+- \u6570\u636E\u9A71\u52A8\uFF0C\u6BCF\u4E2A\u5224\u65AD\u9644\u6570\u5B57
+- \u8868\u683C\u7528\u4E8E\u5BF9\u6BD4\uFF0C\u6587\u7AE0\u7528\u4E8E\u6DF1\u5EA6\u5206\u6790
+- \u7528\u4E2D\u6587\uFF0C\u76F4\u63A5\u4E0D\u5E9F\u8BDD
+- \u6700\u540E\u9644\u6210\u672C\u62AB\u9732\uFF08Clawby API \u8C03\u7528\u6B21\u6570\u3001\u6A21\u578B\u4FE1\u606F\uFF09
+
+\u4F60\u6536\u5230\u7684\u6570\u636E\u6765\u81EA Clawby Data \u5B9E\u65F6\u884C\u60C5\u63A5\u53E3\u3002`;
+  }
+  return `You are Serenity, a professional US market supply-chain bottleneck and yield analyst...`;
+}
+function buildUserPrompt(data, params) {
+  const lang = params.language;
+  const styleLabel = params.style === "conservative" ? "\u4FDD\u5B88" : params.style === "aggressive" ? "\u8FDB\u53D6" : "\u5747\u8861";
+  let prompt = "";
+  if (lang === "zh") {
+    prompt = `## \u5206\u6790\u53C2\u6570
+- \u98CE\u9669\u504F\u597D: ${styleLabel}
+- \u5173\u6CE8\u884C\u4E1A: ${params.focusSectors || "\u5168\u5E02\u573A"}
+- \u6700\u4F4E\u80A1\u606F\u7387: ${params.yieldMin}%
+
+## \u5E02\u573A\u6570\u636E
+
+### \u4E3B\u8981\u6307\u6570
+${JSON.stringify(data.indices, null, 2)}
+
+### \u677F\u5757 ETF
+${JSON.stringify(data.sectors, null, 2)}
+
+### \u5B8F\u89C2\u6307\u6807
+- VIX: ${data.vix}
+- 10Y \u7F8E\u503A\u6536\u76CA\u7387: ${data.tenYear}%
+
+### \u6536\u76CA\u578B\u8D44\u4EA7\u6C60
+${JSON.stringify(data.yieldAssets, null, 2)}
+
+---
+
+\u8BF7\u6309\u7167 Serenity \u65B9\u6CD5\u8BBA\u751F\u6210\u5B8C\u6574\u7684\u5206\u6790\u62A5\u544A\u3002\u62A5\u544A\u7528\u4E2D\u6587\uFF0C\u6570\u636E\u9A71\u52A8\uFF0C\u6DF1\u5EA6\u5206\u6790\u81F3\u5C11 2 \u4E2A\u4F9B\u5E94\u94FE\u74F6\u9888\u65B9\u5411\u3002
+
+\u611F\u8C22 Clawby Data (openclawby.com) \u63D0\u4F9B\u5B9E\u65F6\u884C\u60C5\u6570\u636E\u3002`;
+  } else {
+    prompt = `## Parameters
+- Risk: ${params.style}
+- Focus: ${params.focusSectors || "All sectors"}
+- Min yield: ${params.yieldMin}%
+
+## Market Data
+
+### Indices
+${JSON.stringify(data.indices, null, 2)}
+
+### Sectors
+${JSON.stringify(data.sectors, null, 2)}
+
+### Macro
+- VIX: ${data.vix}
+- 10Y Treasury: ${data.tenYear}%
+
+### Yield Assets
+${JSON.stringify(data.yieldAssets, null, 2)}
+
+---
+
+Generate the full Serenity analysis report in English.`;
+  }
+  return prompt;
+}
+async function generateReport(data, params) {
+  if (!DEEPSEEK_API_KEY) {
+    return "Error: DEEPSEEK_API_KEY not configured on server.";
+  }
+  const systemPrompt = buildSerenitySystemPrompt(params.language);
+  const userPrompt = buildUserPrompt(data, params);
+  const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${DEEPSEEK_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 8e3
+    })
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    console.error(`DeepSeek API error: ${resp.status} ${errText}`);
+    throw new Error(`DeepSeek API returned ${resp.status}`);
+  }
+  const result = await resp.json();
+  const content = result?.choices?.[0]?.message?.content || "";
+  return content;
+}
+app.post("/mcp/us-yield-hunter", async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const args = req.body?.params?.arguments || req.body?.arguments || {};
+    const params = {
+      focusSectors: args.focus_sectors || "",
+      style: args.style || "balanced",
+      yieldMin: parseFloat(args.yield_min || "3"),
+      language: args.language || "zh"
+    };
+    console.log(`[Analysis] Starting for style=${params.style}, focus=${params.focusSectors || "all"}`);
+    console.log("[Analysis] Fetching market snapshot...");
+    const marketData = await fetchMarketSnapshot();
+    console.log(`[Analysis] Got ${marketData.indices.length} indices, ${marketData.sectors.length} sectors, ${marketData.yieldAssets.length} yield assets`);
+    console.log("[Analysis] Generating report via DeepSeek...");
+    const report = await generateReport(marketData, params);
+    const elapsed = ((Date.now() - startTime) / 1e3).toFixed(1);
+    console.log(`[Analysis] Done in ${elapsed}s`);
     res.json({
       success: true,
-      message: "US Yield & Bottleneck Hunter \u2014 Payment verified. Full Serenity analysis pipeline coming soon.",
-      agentId: "5149"
+      agentId: "5149",
+      agent: "US Yield & Bottleneck Hunter",
+      params,
+      report,
+      marketData: {
+        indices: marketData.indices,
+        sectors: marketData.sectors,
+        vix: marketData.vix,
+        tenYear: marketData.tenYear,
+        yieldAssetCount: marketData.yieldAssets.length
+      },
+      meta: {
+        elapsedSeconds: parseFloat(elapsed),
+        dataSource: "Clawby Data (openclawby.com)",
+        model: "DeepSeek Chat"
+      }
     });
   } catch (error) {
     console.error("Analysis error:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({
+      success: false,
+      error: error.message || "Analysis failed",
+      agentId: "5149"
+    });
   }
 });
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     agent: "US Yield & Bottleneck Hunter",
-    agentId: "5149"
+    agentId: "5149",
+    ready: Boolean(CLAWBY_API_KEY && DEEPSEEK_API_KEY)
   });
 });
 app.listen(PORT, () => {
@@ -30461,6 +30719,8 @@ app.listen(PORT, () => {
   console.log(`   Endpoint: POST /mcp/us-yield-hunter`);
   console.log(`   Payment: $1 USDT on XLayer (eip155:196)`);
   console.log(`   PayTo:  ${XLAYER_ADDRESS}`);
+  console.log(`   Clawby: ${CLAWBY_API_KEY ? "\u2713" : "\u2717 NOT SET"}`);
+  console.log(`   DeepSeek: ${DEEPSEEK_API_KEY ? "\u2713" : "\u2717 NOT SET"}`);
 });
 /*! Bundled license information:
 
