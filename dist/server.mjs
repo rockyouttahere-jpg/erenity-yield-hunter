@@ -30425,7 +30425,7 @@ app.use(
       "POST /mcp/us-yield-hunter": {
         accepts: {
           scheme: "exact",
-          price: "$5",
+          price: "$1",
           network: "eip155:196",
           payTo: XLAYER_ADDRESS
         },
@@ -30459,7 +30459,7 @@ app.listen(PORT, () => {
   console.log("\u{1F52C} US Yield & Bottleneck Hunter \u2014 x402 MCP Server");
   console.log(`   Port: ${PORT}`);
   console.log(`   Endpoint: POST /mcp/us-yield-hunter`);
-  console.log(`   Payment: $5 USDT on XLayer (eip155:196)`);
+  console.log(`   Payment: $1 USDT on XLayer (eip155:196)`);
   console.log(`   PayTo:  ${XLAYER_ADDRESS}`);
 });
 /*! Bundled license information:
